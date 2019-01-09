@@ -1,0 +1,18 @@
+{
+    "format_version": 1,
+    "header": {
+        "description": "reversi",
+        "name": "reversi",
+        "uuid": "fe6f0d1c-4a31-41f5-a5fd-ad310263f391",
+        "version": [1, 0, 0],
+        "min_engine_version": [1, 2, 7]
+    },
+    "modules": [
+    {
+        "description": "reversi",
+        "type": "client_data",
+        "uuid": "ec8f0de4-ee3a-4bf5-bb35-e4a25388085d",
+        "version": [1, 0, 0]
+    }
+    ]
+}
