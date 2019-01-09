@@ -15,10 +15,6 @@ const score_list = [
 	[ 30,-12,  0,  5,  5,  0,-12, 30]
 ];
 
-const black = -1;
-const white = 1;
-const not_placed = 0;
-
 const stone = {black: -1, white: 1, not_placed: 0};
 const id = {name: "carpet", black: 15, white: 0};
 
@@ -35,60 +31,9 @@ let board = [
 	[0, 0, 0, 0, 0, 0, 0, 0]
 ];
 
-let destroy = true;
-
 system.initialize = function () {
 	query = this.registerQuery();
     this.listenForEvent("othello:setup", (eventData) => this.setup(eventData));
-}
-
-system.update = function() {
-	let entities = this.getEntitiesFromQuery(query);
-	let count = entities.length;
-	for(let i = 0; i < count; i ++) {
-		if(entities[i].__identifier__ !== "minecraft:endermite") continue;
-		if(!destroy) continue;
-		destroy = false;
-		let pos = this.createComponent(entities[i], "minecraft:position");
-		let x = Math.floor(pos.x);
-		let y = Math.floor(pos.y);
-		let z = Math.floor(pos.z);
-		if(game.turn !== stone.black) {
-			this.broadcastEvent("minecraft:display_chat_event", "相手の番です");
-		} else if(this.isOnBoard(x, y, z) && this.getAdjacentStones(x, z, stone.black).length >= 1) {
-			let blocks = this.getAdjacentStones(x, z, stone.black);
-			let size = blocks.length;
-			let placed = false;
-			for(let i = 0; i < size; i ++) {
-				let count = this.getFlippableStoneCount(x, z, blocks[i].x - x, blocks[i].z - z, stone.black);
-				if(count <= 0)  continue;
-				placed = this.flipStones(x, z, blocks[i].x - x, blocks[i].z - z, count, stone.black);
-			}
-			if(!placed) {
-				this.broadcastEvent("minecraft:display_chat_event", "その場所には置けません");
-			} else {
-				game.count ++;
-				if(game.count >= 60) {
-					this.finish();
-				} else {
-					task.count = 10;
-					task.task = true;
-					game.turn *= -1;
-				}
-			}
-		} else {
-			this.broadcastEvent("minecraft:display_chat_event", "その場所には置けません");
-		}
-		this.destroyEntity(entities[i]);
-		destroy = true;
-	}
-	if(task.task) {
-		task.count --;
-		if(task.count == 0) {
-			this.findPlace(stone.white);
-			task.task = false;
-		}
-	}
 }
 
 system.setup = function(eventData) {
@@ -101,20 +46,74 @@ system.setup = function(eventData) {
     this.broadcastEvent("minecraft:execute_command", "/tp @p 3 5 3");
 }
 
+system.update = function() {
+	const entities = this.getEntitiesFromQuery(query);
+	const count = entities.length;
+	for(let i = 0; i < count; i ++) {
+		if(entities[i].__identifier__ !== "minecraft:endermite") continue;
+
+		const pos = this.createComponent(entities[i], "minecraft:position");
+		const x = Math.floor(pos.x);
+		const y = Math.floor(pos.y);
+		const z = Math.floor(pos.z);
+		this.destroyEntity(entities[i]);
+
+		if(game.turn !== stone.black) {
+			this.broadcastEvent("minecraft:display_chat_event", "相手の番です");
+			break;
+		}
+
+		if(!this.isOnBoard(x, y, z) || this.getAdjacentStones(x, z, stone.black).length <= 0) {
+			this.broadcastEvent("minecraft:display_chat_event", "その場所には置けません");
+			break;
+		}
+
+		const blocks = this.getAdjacentStones(x, z, stone.black);
+		const size = blocks.length;
+		let placed = false;
+		for(let i = 0; i < size; i ++) {
+			const count = this.getFlippableStoneCount(x, z, blocks[i].x - x, blocks[i].z - z, stone.black);
+			if(count <= 0) continue;
+			placed = this.flipStones(x, z, blocks[i].x - x, blocks[i].z - z, count, stone.black);
+		}
+
+		if(!placed) {
+			this.broadcastEvent("minecraft:display_chat_event", "その場所には置けません");
+			break;
+		}
+
+		game.count ++;
+		if(game.count >= 60) {
+			this.finish();
+			break;
+		}
+		game.turn *= -1;
+
+		// 10tick後にcpuがブロックを置く場所を探す
+		task.count = 10;
+		task.task = true;
+	}
+	if(task.task) {
+		task.count --;
+		if(task.count == 0) {
+			this.findPlace(stone.white);
+			task.task = false;
+		}
+	}
+}
+
 system.isOnBoard = function(x, y, z) {
 	return y === 5 && x >= 0 && x <= 8 && z >= 0 && z <= 8;
 }
 
 system.getAdjacentStones = function(x, z, turn) {
 	let result = [];
-
 	if(board[x][z] !== stone.not_placed) return result;
 
-	turn *= -1;
     for(let i = x-1; i <= x+1; i ++){
         for(let j = z-1; j <= z+1; j ++){
 			if(!(i in board && j in board[i])) continue;
-            if(board[i][j] === turn) result.push({x: i, z: j});
+            if(board[i][j] === -turn) result.push({x: i, z: j});
         }
     }
     return result;
@@ -122,28 +121,22 @@ system.getAdjacentStones = function(x, z, turn) {
 
 system.getFlippableStoneCount = function(x, z, dx, dz, turn) {
 	let count = 0;
-	let found_my_stone = false;
+	let found_own_stone = false;
 	for(let i = 0; i < 8; i ++) {
 		x += dx;
 		z += dz;
 		if(!(x in board && z in board[x])) break;
-		if(board[x][z] === turn) found_my_stone = true;
+		if(board[x][z] === turn) found_own_stone = true;
 		if(board[x][z] === turn || board[x][z] === stone.not_placed) break;
 		count ++;
 	}
-	if(!found_my_stone) count = 0;
+	if(!found_own_stone) count = 0;
 	return count;
 }
 
 system.flipStones = function(x, z, dx, dz, count, turn) {
 	for(let i = 0; i <= count; i ++) {
-		let damage;
-		if(turn === stone.black) {
-			damage = id.black;
-		} else if(turn === stone.white) {
-			damage = id.white;
-		}
-
+		const damage = turn === stone.black ? id.black : id.white;
 		if(x in board && z in board[x]) {
 			board[x][z] = turn;
 	    	this.broadcastEvent("minecraft:execute_command", `/setblock ${x} 5 ${z} ${id.name} ${damage}`);
@@ -170,7 +163,6 @@ system.getScore = function(turn, board1 = null) {
 system.findPlace = function(turn) {
 	let max = -9999;
 	let max_pos = {};
-	let mes = [];
 	for(let x = 0; x <= 7; x ++) {
 		for(let z = 0; z <= 7; z ++) {
 			const stones = this.getAdjacentStones(x, z, turn);
